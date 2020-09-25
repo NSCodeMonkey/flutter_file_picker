@@ -29,6 +29,7 @@ import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Random;
+import java.nio.channels.FileChannel;
 
 public class FileUtils {
 
@@ -116,61 +117,37 @@ public class FileUtils {
         return true;
     }
 
+    public static void copyFile(File src, File dst) throws IOException {
+        FileChannel inChannel = new FileInputStream(src).getChannel();
+        FileChannel outChannel = new FileOutputStream(dst).getChannel();
+        try {
+            inChannel.transferTo(0, inChannel.size(), outChannel);
+        } finally {
+            if (inChannel != null)
+                inChannel.close();
+            if (outChannel != null)
+                outChannel.close();
+        }
+    }
+
     public static FileInfo openFileStream(final Context context, final Uri uri, boolean withData) {
+        // Just ignore `withData` option
+        withData = false;
 
         Log.i(TAG, "Caching from URI: " + uri.toString());
-        FileOutputStream fos = null;
         final FileInfo.Builder fileInfo = new FileInfo.Builder();
         final String fileName = FileUtils.getFileName(uri, context);
         final String path = context.getCacheDir().getAbsolutePath() + "/file_picker/" + (fileName != null ? fileName : new Random().nextInt(100000));
 
         final File file = new File(path);
 
-        if(file.exists() && withData) {
-            int size = (int) file.length();
-            byte[] bytes = new byte[size];
-
-            try {
-                BufferedInputStream buf = new BufferedInputStream(new FileInputStream(file));
-                buf.read(bytes, 0, bytes.length);
-                buf.close();
-            } catch (FileNotFoundException e) {
-                Log.e(TAG, "File not found: " + e.getMessage(), null);
-            } catch (IOException e) {
-                Log.e(TAG, "Failed to close file streams: " + e.getMessage(), null);
-            }
-            fileInfo.withData(bytes);
-        } else {
-
+        if (!file.exists()) {
             file.getParentFile().mkdirs();
+
             try {
-                fos = new FileOutputStream(path);
-                try {
-                    final ByteArrayOutputStream out = new ByteArrayOutputStream();
-                    final InputStream in = context.getContentResolver().openInputStream(uri);
-
-                    final byte[] buffer = new byte[8192];
-                    int len = 0;
-
-                    while ((len = in.read(buffer)) >= 0) {
-                        out.write(buffer, 0, len);
-                    }
-
-                    if(withData) {
-                        fileInfo.withData(out.toByteArray());
-                    }
-                    out.writeTo(fos);
-                    out.flush();
-                } finally {
-                    fos.getFD().sync();
-                }
+                final File srcFile = new File(uri.getPath());
+                copyFile(srcFile, file);
             } catch (final Exception e) {
-                try {
-                    fos.close();
-                } catch (final IOException | NullPointerException ex) {
-                    Log.e(TAG, "Failed to close file streams: " + e.getMessage(), null);
-                    return null;
-                }
                 Log.e(TAG, "Failed to retrieve path: " + e.getMessage(), null);
                 return null;
             }
